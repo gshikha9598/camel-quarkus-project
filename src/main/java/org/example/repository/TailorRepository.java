@@ -6,12 +6,10 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.example.model.Tailor;
-
 import java.util.List;
 
 @ApplicationScoped
 public class TailorRepository implements PanacheRepository<Tailor> {
-
     @Inject
     EntityManager entityManager;
 

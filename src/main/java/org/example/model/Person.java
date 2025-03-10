@@ -10,18 +10,12 @@ import lombok.ToString;
 @Setter
 @ToString
 public class Person {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long userId;
-
     private String firstName;
-
     private String lastName;
-
     private String email;
-
     @OneToOne
     private Role role;
-
 }

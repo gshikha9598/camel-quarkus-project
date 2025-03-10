@@ -1,7 +1,6 @@
 package org.example.route;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.builder.RouteBuilder;
@@ -17,30 +16,24 @@ import org.example.repository.OrderRepository;
 import org.example.repository.PersonRepository;
 import org.example.repository.TailorRepository;
 import org.example.service.OrderService;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 @ApplicationScoped
 public class MainRoute extends RouteBuilder {
-
     @Inject
     OrderService orderService;
-
     @Inject
     OrderRepository orderRepository;
-
     @Inject
     TailorRepository tailorRepository;
-
     @Inject
     PersonRepository personRepository;
 
     @Override
     public void configure() throws Exception {
         restConfiguration().component("platform-http").bindingMode(RestBindingMode.json);
-
 
         rest("/api/v1")
                 .post("/placeorder")
@@ -131,6 +124,7 @@ public class MainRoute extends RouteBuilder {
                     order.setStage("QUALITY_CHECK");
                     order.setStageInTime(LocalDateTime.now());
                     Thread.sleep(30000);
+
                     orderRepository.updateOrder(order);
 
                     Message message = new Message();
@@ -153,12 +147,12 @@ public class MainRoute extends RouteBuilder {
                     order.setCompleted(true);
                     order.setOrderCompleteTime(LocalDateTime.now());
                     order.setStageInTime(LocalDateTime.now());
+
                     orderRepository.updateOrder(order);
 
                     Tailor tailor = exchange.getProperty("tailor", Tailor.class);
                     tailor.setOrderId(null); //tailor free now
                     tailorRepository.updateTailor(tailor);
-
 
                     Message message = new Message();
                     message.setSubject("Order Dispatched");
@@ -172,9 +166,7 @@ public class MainRoute extends RouteBuilder {
         from("direct:track-order")
                 .routeId("track-order-route")
                 .bean(orderService, "getOrderById")
-                //.marshal().json(JsonLibrary.Jackson)
         ;
-
 
         from("direct:insert-to-kafka")
                 .routeId("inser-to-kafka-route")
@@ -191,12 +183,11 @@ public class MainRoute extends RouteBuilder {
                    Message obj = objectMapper.readValue(message, Message.class);
                    exchange.setProperty("to", obj.getTo());
                    exchange.setProperty("subject", obj.getSubject());
-                   //exchange.setProperty("body", obj.getMessageBody());
                     exchange.getIn().setBody(obj.getMessageBody());
                 })
                 .to("direct:send-mail")
         ;
-        // 0 5 0 * * ?
+
         from("cron://daily-update?schedule=0 5 0 * * ?") //mail to owner- 12:05am- route invoke automatically and provide previous day data
                 .routeId("daily-update-scheduler-route") //scheduler- route invoke/trigger automatically
                 .log("route for daily update trigger")
@@ -211,6 +202,7 @@ public class MainRoute extends RouteBuilder {
                         Order order = orderList.get(i);
                         messageBody = messageBody + "\n\n"+(i+1)+". orderId = "+order.getOrderId()+"\n  tailorName= "+order.getTailor().getTailorName()+"\n  fabric = "+order.getFabric();
                     }
+
                     if(!orderList.isEmpty()){
                         for(Person person: personList){
                             Message message = new Message();
@@ -222,7 +214,6 @@ public class MainRoute extends RouteBuilder {
                         }
                         exchange.getIn().setBody(msgList);
                     }
-
                 })
                 .choice().when(exchange -> exchange.getIn().getBody()!=null) //if-condtion
                 .split().body() //for perticular data of list synchrously
@@ -253,7 +244,6 @@ public class MainRoute extends RouteBuilder {
                       }
                       exchange.getIn().setBody(msgList);
                   }
-
                 })
                 .choice().when(exchange -> exchange.getIn().getBody()!=null)
                 .split().body()
@@ -263,7 +253,5 @@ public class MainRoute extends RouteBuilder {
                 .log("No order is stuck at any stage")
                 .end()
         ;
-
-
     }
 }

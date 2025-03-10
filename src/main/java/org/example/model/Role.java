@@ -11,11 +11,8 @@ import lombok.ToString;
 @Setter
 @ToString
 public class Role extends PanacheEntityBase {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long roleId;
-
     private String roleName;
-
 }

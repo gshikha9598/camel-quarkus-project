@@ -13,7 +13,6 @@ public class Fabric {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long fabricId;
-
     private String fabricName;
 }
 

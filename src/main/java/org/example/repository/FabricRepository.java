@@ -5,7 +5,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
 import org.example.model.Fabric;
 
-
 @ApplicationScoped
 public class FabricRepository implements PanacheRepository<Fabric> {
     @Transactional

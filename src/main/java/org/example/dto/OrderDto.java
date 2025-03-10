@@ -8,8 +8,6 @@ import lombok.ToString;
 @Setter
 @ToString
 public class OrderDto {
-
     private long personId;
     private String fabric;
-
 }

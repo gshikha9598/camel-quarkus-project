@@ -2,7 +2,6 @@ package org.example.route;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import org.example.model.Order;
 
 @ApplicationScoped
 public class MailRoute extends RouteBuilder {

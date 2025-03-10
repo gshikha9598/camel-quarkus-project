@@ -6,15 +6,12 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.example.model.Order;
-
 import java.time.LocalDate;
 import java.util.List;
-
 import java.time.LocalDateTime;
 
 @ApplicationScoped
 public class OrderRepository implements PanacheRepository<Order> {
-
     @Inject
     EntityManager entityManager;
 
