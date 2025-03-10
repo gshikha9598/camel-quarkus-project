@@ -22,24 +22,24 @@ public class OrderRepository implements PanacheRepository<Order> {
 
     @Transactional
     public Order getOrderById(String orderId){
-        Order order =  find("orderId=?1", orderId).singleResult();
+        Order order =  find("orderId=?1", orderId).singleResult(); //provide first object
         return order;
     }
 
     @Transactional
     public  List<Order> getCompletedOrder(){
-       List<Order> orderList =  list("orderCompleteTime BETWEEN ?1 AND ?2", LocalDate.now().minusDays(1).atStartOfDay(), LocalDate.now().minusDays(1).atTime(23,59,59)); //7,12:00:00am to 7,11:59:59pm
+       List<Order> orderList =  list("orderCompleteTime BETWEEN ?1 AND ?2", LocalDate.now().minusDays(1).atStartOfDay(), LocalDate.now().minusDays(1).atTime(23,59,59)); //10,12:00:00am to 10,11:59:59pm
         for(Order order : orderList){
-           order.getTailor();
+           order.getTailor(); //to eagerly load tailor object- use transactional use for first time
         }
         return orderList;
     }
 
     @Transactional
     public List<Order> getAllDelayedOrder(){
-        List<Order> orderList = list("isCompleted=?1 and stageInTime<?2", false, LocalDateTime.now().minusDays(1));
+        List<Order> orderList = list("isCompleted=?1 and stageInTime<?2", false, LocalDateTime.now().minusDays(1)); //10
         for(Order order : orderList){
-            order.getTailor().getManager();
+            order.getTailor().getManager(); //to eagerly load manager object- use transactional use for first time
         }
         return orderList;
     }

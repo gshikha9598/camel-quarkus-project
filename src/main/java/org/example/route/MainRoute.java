@@ -36,22 +36,23 @@ public class MainRoute extends RouteBuilder {
         restConfiguration().component("platform-http").bindingMode(RestBindingMode.json);
 
         rest("/api/v1")
-                .post("/placeorder")
+                .post("/placeorder") //step 1 -request body of exchange
                 .type(OrderDto.class)   //type- map which pojo
                 .to("direct:validate-order")
                 .get("/trackorder")
-                .param().type(RestParamType.query).name("orderId").endParam()
+                .param().type(RestParamType.query).name("orderId").dataType("string").endParam() //exchange Header-for queryParam/PathParam
                 .to("direct:track-order")
         ;
 
         from("direct:validate-order")
-                .routeId("validate-order-route")
-                .bean(orderService, "validateOrder") //bean - route to class methods
+                .routeId("validate-order-route") //step 2
+                .bean(orderService, "validateOrder") //bean - route to class method
                 .to("seda:tailor?WaitForTaskToComplete=Never") //seda- asynchronous call
         ;
 
         from("seda:tailor")
                 .routeId("tailor-route")
+                .choice().when(exchange -> exchange.getProperty("order", Order.class)!=null)
                 .log("order received, order=${exchangeProperty.order}, tailor=${exchangeProperty.tailor}") //under route
                 .to("direct:confirm-stage") //Order Confirmed Message by seda
         ;
@@ -69,7 +70,8 @@ public class MainRoute extends RouteBuilder {
                     Message message = new Message();
                     message.setSubject("Order Confirmed");
                     message.setMessageBody("Your order is confirmed. OrderId="+order.getOrderId());
-                    message.setTo(order.getUser().getEmail());
+                    message.setTo(order.getUser().getEmail()); //email-person
+
                     exchange.getIn().setBody(message);
                 })
                 .to("direct:insert-to-kafka")
@@ -90,6 +92,7 @@ public class MainRoute extends RouteBuilder {
                     message.setSubject("Fabric Being Cut");
                     message.setMessageBody("Your fabric is being cut. OrderId="+order.getOrderId());
                     message.setTo(order.getUser().getEmail());
+
                     exchange.getIn().setBody(message);
                 })
                 .to("direct:insert-to-kafka")
@@ -110,6 +113,7 @@ public class MainRoute extends RouteBuilder {
                     message.setSubject("Stitching Started");
                     message.setMessageBody("Stitching has started. OrderId="+order.getOrderId());
                     message.setTo(order.getUser().getEmail());
+
                     exchange.getIn().setBody(message);
                 })
                 .to("direct:insert-to-kafka")
@@ -123,7 +127,6 @@ public class MainRoute extends RouteBuilder {
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("QUALITY_CHECK");
                     order.setStageInTime(LocalDateTime.now());
-                    Thread.sleep(30000);
 
                     orderRepository.updateOrder(order);
 
@@ -131,6 +134,7 @@ public class MainRoute extends RouteBuilder {
                     message.setSubject("Quality Check");
                     message.setMessageBody("Quality check is done. OrderId="+order.getOrderId());
                     message.setTo(order.getUser().getEmail());
+
                     exchange.getIn().setBody(message);
                 })
                 .to("direct:insert-to-kafka")
@@ -148,17 +152,18 @@ public class MainRoute extends RouteBuilder {
                     order.setOrderCompleteTime(LocalDateTime.now());
                     order.setStageInTime(LocalDateTime.now());
 
-                    orderRepository.updateOrder(order);
+                    orderRepository.updateOrder(order); //update to db
 
                     Tailor tailor = exchange.getProperty("tailor", Tailor.class);
                     tailor.setOrderId(null); //tailor free now
-                    tailorRepository.updateTailor(tailor);
+                    tailorRepository.updateTailor(tailor); //update to db
 
                     Message message = new Message();
                     message.setSubject("Order Dispatched");
                     message.setMessageBody("Your order is dispatched. OrderId="+order.getOrderId());
                     message.setTo(order.getUser().getEmail());
-                    exchange.getIn().setBody(message);
+
+                    exchange.getIn().setBody(message); //message go to kafka
                 })
                 .to("direct:insert-to-kafka")
         ;
@@ -169,31 +174,33 @@ public class MainRoute extends RouteBuilder {
         ;
 
         from("direct:insert-to-kafka")
-                .routeId("inser-to-kafka-route")
+                .routeId("insert-to-kafka-route")
                 .marshal().json(JsonLibrary.Jackson) //convert msg object to json string
-                .to("kafka:mail-topic?brokers={{kafka.bootstrap.servers}}") // Publish to Kafka topic
+                .to("kafka:mail-topic?brokers={{kafka.bootstrap.servers}}") // produce to Kafka topic
         ;
 
-        from("kafka:mail-topic?brokers={{kafka.bootstrap.servers}}&groupId=consumer-group") //when msg produce to kafka
+        from("kafka:mail-topic?brokers={{kafka.bootstrap.servers}}&groupId=consumer-group") //when msg produce to kafka automatically consume
                 .routeId("consume-from-kafka-route")
                 .log("Received message from Kafka: ${body}")
                 .process(exchange -> {
-                    String message = exchange.getIn().getBody(String.class);
+                    String message = exchange.getIn().getBody(String.class); //json String
                     ObjectMapper objectMapper = new ObjectMapper();
-                   Message obj = objectMapper.readValue(message, Message.class);
-                   exchange.setProperty("to", obj.getTo());
+                   Message obj = objectMapper.readValue(message, Message.class); //convert jsonStrong to object
+
+                    exchange.setProperty("to", obj.getTo()); //kafka- where send mail
                    exchange.setProperty("subject", obj.getSubject());
+
                     exchange.getIn().setBody(obj.getMessageBody());
                 })
-                .to("direct:send-mail")
+                .to("direct:send-mail") //MailRoute.class
         ;
-
-        from("cron://daily-update?schedule=0 5 0 * * ?") //mail to owner- 12:05am- route invoke automatically and provide previous day data
-                .routeId("daily-update-scheduler-route") //scheduler- route invoke/trigger automatically
+    //mail to owner- 12:05am- route invoke automatically and provide previous day data
+        from("cron://daily-update?schedule=0 5 0 * * ?") //cron- use for interval route execute,cron expression-0 5 0 * * ?
+                .routeId("daily-update-scheduler-route")
                 .log("route for daily update trigger")
                 .process(exchange -> {
-                    List<Order> orderList = orderRepository.getCompletedOrder();
-                    List<Person> personList = personRepository.findAllOwners();
+                    List<Order> orderList = orderRepository.getCompletedOrder(); //12:00 - 11:59
+                    List<Person> personList = personRepository.findAllOwners(); //Owners
                     List<Message> msgList = new ArrayList<>();
 
                     String messageBody = "Hello Sir,\n\nHere is tha Order Details that have been Completed Today...";
@@ -204,19 +211,19 @@ public class MainRoute extends RouteBuilder {
                     }
 
                     if(!orderList.isEmpty()){
-                        for(Person person: personList){
+                        for(Person person: personList){ //Owner
                             Message message = new Message();
-                            message.setTo(person.getEmail());
+                            message.setTo(person.getEmail()); //whom to send
                             message.setMessageBody(messageBody);
                             message.setSubject("Order Completed Report");
 
                             msgList.add(message);
                         }
-                        exchange.getIn().setBody(msgList);
+                        exchange.getIn().setBody(msgList); //List of msg
                     }
                 })
                 .choice().when(exchange -> exchange.getIn().getBody()!=null) //if-condtion
-                .split().body() //for perticular data of list synchrously
+                .split().body() //for perticular data of list synchrously-list of msg
                 .to("direct:insert-to-kafka")
                 .endChoice()
                 .otherwise() //else-condtion
@@ -242,11 +249,11 @@ public class MainRoute extends RouteBuilder {
                           message.setMessageBody(messageBody);
                           msgList.add(message);
                       }
-                      exchange.getIn().setBody(msgList);
+                      exchange.getIn().setBody(msgList); //List of msg
                   }
                 })
                 .choice().when(exchange -> exchange.getIn().getBody()!=null)
-                .split().body()
+                .split().body() //for particular data of list synchronously- list of msg
                 .to("direct:insert-to-kafka")
                 .endChoice()
                 .otherwise()

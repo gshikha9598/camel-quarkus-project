@@ -38,8 +38,8 @@ public class OrderService {
     EntityManager entityManager;
 
     @Transactional
-    public void validateOrder(Exchange exchange) { //exchange ke object se body get krna
-        OrderDto orderDto = exchange.getIn().getBody(OrderDto.class);
+    public void validateOrder(Exchange exchange) {
+        OrderDto orderDto = exchange.getIn().getBody(OrderDto.class); //exchange ke object se body get krna
         Person person = personRepository.getPersonById(orderDto.getPersonId()); //get customerId
 
         if (person == null) {
@@ -61,12 +61,12 @@ public class OrderService {
 
         Tailor tailor = null;
 
-        for(Tailor tailor1 : tailors){
+        for(Tailor tailor1 : tailors){ //check fabric from list of tailor
             if(tailor1.getFabrics()
                     .stream()
                     .map(d-> d.getFabricName())
                     .anyMatch(d-> d.equalsIgnoreCase(orderDto.getFabric()))){
-                tailor = tailor1;
+                tailor = tailor1; //assign tailor to variable
                 break;
             }
         }
@@ -93,7 +93,7 @@ public class OrderService {
         exchange.setProperty("order", order);
         exchange.setProperty("tailor", tailor);
 
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> map = new LinkedHashMap<>();//first status than orderId
         map.put("status", "order placed successfully");
         map.put("orderId", order.getOrderId());
 

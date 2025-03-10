@@ -15,7 +15,7 @@ public class PersonRepository implements PanacheRepository<Person> {
 
     @Transactional
     public List<Person> findAllOwners() {
-        return list("role.roleName", "Owner"); //or (role.roleName, 2)
+        return list("role.roleName", "Owner"); //or (role.roleId, 2)
     }
 
 }

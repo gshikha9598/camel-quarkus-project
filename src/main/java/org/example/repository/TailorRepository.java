@@ -20,6 +20,6 @@ public class TailorRepository implements PanacheRepository<Tailor> {
 
     @Transactional
     public List<Tailor> getAvailableTailor(){
-        return  list("orderId IS NULL");
+        return  list("orderId IS NULL"); //tailor is free
     }
 }
