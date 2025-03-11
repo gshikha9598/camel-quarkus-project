@@ -52,16 +52,16 @@ public class OrderService {
             return;
         }
 
-        List<Tailor> tailors = tailorRepository.getAvailableTailor();
+        List<Tailor> tailorList = tailorRepository.getAvailableTailor();
 
-        if(tailors.isEmpty()){
-            exchange.getIn().setBody("No Tailor is Available Now");
+        if(tailorList.isEmpty()){
+            exchange.getIn().setBody("No Tailor is Available Now"); //all tailors are occupied
             return;
         }
 
         Tailor tailor = null;
 
-        for(Tailor tailor1 : tailors){ //check fabric from list of tailor
+        for(Tailor tailor1 : tailorList){ //check fabric from list of tailor
             if(tailor1.getFabrics()
                     .stream()
                     .map(d-> d.getFabricName())

@@ -33,11 +33,12 @@ public class MainRoute extends RouteBuilder {
 
     @Override
     public void configure() throws Exception {
+        //configure REST settings-REST DSL,camel component-platform-http/servlet,Camel to automatically convert request and response bodies to/from JSON.
         restConfiguration().component("platform-http").bindingMode(RestBindingMode.json);
 
         rest("/api/v1")
                 .post("/placeorder") //step 1 -request body of exchange
-                .type(OrderDto.class)   //type- map which pojo
+                .type(OrderDto.class)   //type- map which pojo-json to java object
                 .to("direct:validate-order")
                 .get("/trackorder")
                 .param().type(RestParamType.query).name("orderId").dataType("string").endParam() //exchange Header-for queryParam/PathParam
@@ -46,26 +47,26 @@ public class MainRoute extends RouteBuilder {
 
         from("direct:validate-order")
                 .routeId("validate-order-route") //step 2
-                .bean(orderService, "validateOrder") //bean - route to class method
+                .bean(orderService, "validateOrder") //bean class and related method
                 .to("seda:tailor?WaitForTaskToComplete=Never") //seda- asynchronous call
         ;
 
         from("seda:tailor")
                 .routeId("tailor-route")
                 .choice().when(exchange -> exchange.getProperty("order", Order.class)!=null)
-                .log("order received, order=${exchangeProperty.order}, tailor=${exchangeProperty.tailor}") //under route
+                .log("order received, order=${exchangeProperty.order}, tailor=${exchangeProperty.tailor}") //check log
                 .to("direct:confirm-stage") //Order Confirmed Message by seda
         ;
 
         from("direct:confirm-stage") //direct- asynchronous call - Stages
                 .routeId("confirm-stage-route")
                 .log("In Confirm Stage")
-                .process(exchange -> {
+                .process(exchange -> { //process()-when we codeBlock in route DSL/manipulate the message(exchange) programmatically using Java code.
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("CONFIRM");
                     order.setStageInTime(LocalDateTime.now());
 
-                    orderRepository.updateOrder(order);
+                    orderRepository.updateOrder(order); //update to db
 
                     Message message = new Message();
                     message.setSubject("Order Confirmed");
@@ -82,16 +83,17 @@ public class MainRoute extends RouteBuilder {
                 .routeId("fabric-cut-stage-route")
                 .log("In Fabric Being Cut Stage")
                 .process(exchange -> {
+                    //Thread.sleep(10000);
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("FABRIC_CUT");
                     order.setStageInTime(LocalDateTime.now());
 
-                    orderRepository.updateOrder(order);
+                    orderRepository.updateOrder(order); //update to db
 
                     Message message = new Message();
                     message.setSubject("Fabric Being Cut");
                     message.setMessageBody("Your fabric is being cut. OrderId="+order.getOrderId());
-                    message.setTo(order.getUser().getEmail());
+                    message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
                 })
@@ -107,12 +109,12 @@ public class MainRoute extends RouteBuilder {
                     order.setStage("STITCHING");
                     order.setStageInTime(LocalDateTime.now());
 
-                    orderRepository.updateOrder(order);
+                    orderRepository.updateOrder(order);//update to db
 
                     Message message = new Message();
                     message.setSubject("Stitching Started");
                     message.setMessageBody("Stitching has started. OrderId="+order.getOrderId());
-                    message.setTo(order.getUser().getEmail());
+                    message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
                 })
@@ -128,12 +130,12 @@ public class MainRoute extends RouteBuilder {
                     order.setStage("QUALITY_CHECK");
                     order.setStageInTime(LocalDateTime.now());
 
-                    orderRepository.updateOrder(order);
+                    orderRepository.updateOrder(order); //update to db
 
                     Message message = new Message();
                     message.setSubject("Quality Check");
                     message.setMessageBody("Quality check is done. OrderId="+order.getOrderId());
-                    message.setTo(order.getUser().getEmail());
+                    message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
                 })
@@ -161,7 +163,7 @@ public class MainRoute extends RouteBuilder {
                     Message message = new Message();
                     message.setSubject("Order Dispatched");
                     message.setMessageBody("Your order is dispatched. OrderId="+order.getOrderId());
-                    message.setTo(order.getUser().getEmail());
+                    message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message); //message go to kafka
                 })
@@ -175,7 +177,7 @@ public class MainRoute extends RouteBuilder {
 
         from("direct:insert-to-kafka")
                 .routeId("insert-to-kafka-route")
-                .marshal().json(JsonLibrary.Jackson) //convert msg object to json string
+                .marshal().json(JsonLibrary.Jackson) //convert msg object to jsonString
                 .to("kafka:mail-topic?brokers={{kafka.bootstrap.servers}}") // produce to Kafka topic
         ;
 
@@ -183,18 +185,20 @@ public class MainRoute extends RouteBuilder {
                 .routeId("consume-from-kafka-route")
                 .log("Received message from Kafka: ${body}")
                 .process(exchange -> {
-                    String message = exchange.getIn().getBody(String.class); //json String
+                    String message = exchange.getIn().getBody(String.class); //jsonString
                     ObjectMapper objectMapper = new ObjectMapper();
-                   Message obj = objectMapper.readValue(message, Message.class); //convert jsonStrong to object
+                   Message obj = objectMapper.readValue(message, Message.class); //convert jsonStrong to msg object
 
-                    exchange.setProperty("to", obj.getTo()); //kafka- where send mail
+                    exchange.setProperty("to", obj.getTo());
                    exchange.setProperty("subject", obj.getSubject());
 
                     exchange.getIn().setBody(obj.getMessageBody());
                 })
                 .to("direct:send-mail") //MailRoute.class
         ;
-    //mail to owner- 12:05am- route invoke automatically and provide previous day data
+
+        //mail to owner- 12:05am- route invoke automatically and provide previous day data
+        //every 2 minute- 0 */2 * * * ?     0 5 0 * * ?
         from("cron://daily-update?schedule=0 5 0 * * ?") //cron- use for interval route execute,cron expression-0 5 0 * * ?
                 .routeId("daily-update-scheduler-route")
                 .log("route for daily update trigger")
@@ -231,6 +235,7 @@ public class MainRoute extends RouteBuilder {
                 .end()
         ;
 
+        //every 2 minute- 0 */2 * * * ?     0 5 0 * * ?
         from("cron://notify-manager?schedule=0 5 0 * * ?") //If order stuck send alert email to manager
                 .routeId("notify-manager-route")
                 .log("route for update to manager trigger")
@@ -261,4 +266,5 @@ public class MainRoute extends RouteBuilder {
                 .end()
         ;
     }
+
 }

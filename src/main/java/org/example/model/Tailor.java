@@ -18,6 +18,6 @@ public class Tailor {
     @ManyToMany
     private List<Fabric> fabrics;
     private String orderId;
-    @OneToOne
+    @ManyToOne
     private Person manager;
 }
