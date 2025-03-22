@@ -33,20 +33,20 @@ public class MainRoute extends RouteBuilder {
 
     @Override
     public void configure() throws Exception {
-        //configure REST settings-REST DSL,camel component-platform-http/servlet,Camel to automatically convert request and response bodies to/from JSON.
+        //use platform-http component for handling RESTful requests while enabling automatic JSON-to-Java (and vice versa) conversion, ensuring seamless data processing between HTTP requests and Camel routes.
         restConfiguration().component("platform-http").bindingMode(RestBindingMode.json);
 
         rest("/api/v1")
-                .post("/placeorder") //step 1 -request body of exchange
+                .post("/placeorder") //request body of exchange
                 .type(OrderDto.class)   //type- map which pojo-json to java object
                 .to("direct:validate-order")
                 .get("/trackorder")
-                .param().type(RestParamType.query).name("orderId").dataType("string").endParam() //exchange Header-for queryParam/PathParam
+                .param().type(RestParamType.query).name("orderId").dataType("string").endParam() //for queryParam-get()
                 .to("direct:track-order")
         ;
 
         from("direct:validate-order")
-                .routeId("validate-order-route") //step 2
+                .routeId("validate-order-route")
                 .bean(orderService, "validateOrder") //bean class and related method
                 .to("seda:tailor?WaitForTaskToComplete=Never") //seda- asynchronous call
         ;
@@ -58,10 +58,10 @@ public class MainRoute extends RouteBuilder {
                 .to("direct:confirm-stage") //Order Confirmed Message by seda
         ;
 
-        from("direct:confirm-stage") //direct- asynchronous call - Stages
+        from("direct:confirm-stage") //direct- synchronous call - Stages
                 .routeId("confirm-stage-route")
                 .log("In Confirm Stage")
-                .process(exchange -> { //process()-when we codeBlock in route DSL/manipulate the message(exchange) programmatically using Java code.
+                .process(exchange -> { //process()-use for Java DSL, manipulate or process the Exchange within a route.
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("CONFIRM");
                     order.setStageInTime(LocalDateTime.now());
@@ -82,8 +82,8 @@ public class MainRoute extends RouteBuilder {
         from("direct:fabric-cut-stage")
                 .routeId("fabric-cut-stage-route")
                 .log("In Fabric Being Cut Stage")
+                //.delay(20000)
                 .process(exchange -> {
-                    //Thread.sleep(10000);
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("FABRIC_CUT");
                     order.setStageInTime(LocalDateTime.now());
@@ -104,6 +104,7 @@ public class MainRoute extends RouteBuilder {
         from("direct:stitching-stage")
                 .routeId("stitching-stage-route")
                 .log("In Stitching Stage")
+                //.delay(10000)
                 .process(exchange -> {
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("STITCHING");
@@ -125,6 +126,7 @@ public class MainRoute extends RouteBuilder {
         from("direct:quality-check-stage")
                 .routeId("quality-check-stage-route")
                 .log("In Quality Check Stage")
+                //.delay(10000)
                 .process(exchange -> {
                     Order order = exchange.getProperty("order", Order.class); //bahar route
                     order.setStage("QUALITY_CHECK");
@@ -188,7 +190,7 @@ public class MainRoute extends RouteBuilder {
                     String message = exchange.getIn().getBody(String.class); //jsonString
                     ObjectMapper objectMapper = new ObjectMapper();
                    Message obj = objectMapper.readValue(message, Message.class); //convert jsonStrong to msg object
-
+                    //set message- to,subject,messageBody in exchange property
                     exchange.setProperty("to", obj.getTo());
                    exchange.setProperty("subject", obj.getSubject());
 
@@ -199,15 +201,15 @@ public class MainRoute extends RouteBuilder {
 
         //mail to owner- 12:05am- route invoke automatically and provide previous day data
         //every 2 minute- 0 */2 * * * ?     0 5 0 * * ?
-        from("cron://daily-update?schedule=0 5 0 * * ?") //cron- use for interval route execute,cron expression-0 5 0 * * ?
+        from("cron://daily-update?schedule=0 5 0 * * ?") //cron- use for interval route execute
                 .routeId("daily-update-scheduler-route")
                 .log("route for daily update trigger")
                 .process(exchange -> {
-                    List<Order> orderList = orderRepository.getCompletedOrder(); //12:00 - 11:59
+                    List<Order> orderList = orderRepository.getCompletedOrder(); //list of orders- 12:00am - 11:59:59pm
                     List<Person> personList = personRepository.findAllOwners(); //Owners
                     List<Message> msgList = new ArrayList<>();
 
-                    String messageBody = "Hello Sir,\n\nHere is tha Order Details that have been Completed Today...";
+                    String messageBody = "Hello Sir,\n\nHere is the Order Details that have been Completed Today...";
 
                     for (int i = 0; i < orderList.size(); i++) {
                         Order order = orderList.get(i);
@@ -227,7 +229,7 @@ public class MainRoute extends RouteBuilder {
                     }
                 })
                 .choice().when(exchange -> exchange.getIn().getBody()!=null) //if-condtion
-                .split().body() //for perticular data of list synchrously-list of msg
+                .split().body() //Splits a list(msg) into multiple individual messages, processing them synchronously by default.
                 .to("direct:insert-to-kafka")
                 .endChoice()
                 .otherwise() //else-condtion
@@ -240,7 +242,7 @@ public class MainRoute extends RouteBuilder {
                 .routeId("notify-manager-route")
                 .log("route for update to manager trigger")
                 .process(exchange -> {
-                  List<Order> orderList = orderRepository.getAllDelayedOrder();
+                  List<Order> orderList = orderRepository.getAllDelayedOrder(); //delay Orders list
                   List<Message> msgList = new ArrayList<>();
 
                   if(!orderList.isEmpty()){
@@ -258,7 +260,7 @@ public class MainRoute extends RouteBuilder {
                   }
                 })
                 .choice().when(exchange -> exchange.getIn().getBody()!=null)
-                .split().body() //for particular data of list synchronously- list of msg
+                .split().body() //Splits a list(msg) into multiple individual messages, processing them synchronously by default.
                 .to("direct:insert-to-kafka")
                 .endChoice()
                 .otherwise()

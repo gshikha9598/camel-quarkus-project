@@ -9,6 +9,7 @@ public class MailRoute extends RouteBuilder {
     @Override
     public void configure() throws Exception {
         from("direct:send-mail")
+                .routeId("send-mail-route")
                 .setHeader("subject", simple("${exchangeProperty.subject}")) //simple- expression language
                 .setHeader("to", simple("${exchangeProperty.to}")) //to - where mail send
                 .setHeader("Content-Type", constant("text/plain"))

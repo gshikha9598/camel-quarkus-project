@@ -10,5 +10,5 @@ import lombok.ToString;
 public class Message {
     private String subject;
     private String  messageBody;
-    private String to;
+    private String to; //user email
 }

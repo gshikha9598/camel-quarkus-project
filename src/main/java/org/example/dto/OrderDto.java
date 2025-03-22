@@ -9,5 +9,5 @@ import lombok.ToString;
 @ToString
 public class OrderDto {
     private long personId;
-    private String fabric;
+    private String fabric; //fabricName
 }

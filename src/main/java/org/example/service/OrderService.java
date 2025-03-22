@@ -40,7 +40,7 @@ public class OrderService {
     @Transactional
     public void validateOrder(Exchange exchange) {
         OrderDto orderDto = exchange.getIn().getBody(OrderDto.class); //exchange ke object se body get krna
-        Person person = personRepository.getPersonById(orderDto.getPersonId()); //get customerId
+        Person person = personRepository.getPersonById(orderDto.getPersonId()); //get customerId- 3
 
         if (person == null) {
             exchange.getIn().setBody("Person with this id does not exist");
@@ -54,8 +54,8 @@ public class OrderService {
 
         List<Tailor> tailorList = tailorRepository.getAvailableTailor();
 
-        if(tailorList.isEmpty()){
-            exchange.getIn().setBody("No Tailor is Available Now"); //all tailors are occupied
+        if(tailorList.isEmpty()){ //if all tailors are occupied- no tailor is empty/free
+            exchange.getIn().setBody("No Tailor is Available Now");
             return;
         }
 
@@ -93,7 +93,7 @@ public class OrderService {
         exchange.setProperty("order", order);
         exchange.setProperty("tailor", tailor);
 
-        Map<String, Object> map = new LinkedHashMap<>();//first status than orderId
+        Map<String, Object> map = new LinkedHashMap<>(); //display to postman- post
         map.put("status", "order placed successfully");
         map.put("orderId", order.getOrderId());
 
@@ -103,9 +103,9 @@ public class OrderService {
     @Transactional
     public void getOrderById(Exchange exchange){
         String orderId = exchange.getIn().getHeader("orderId", String.class);
-        Order order =  orderRepository.getOrderById(orderId);
+        Order order =  orderRepository.getOrderById(orderId); //ef5bb391-dcd7-4480-8351-750c1628994a
 
-        OrderResponseDto orderResponseDto = new OrderResponseDto();
+        OrderResponseDto orderResponseDto = new OrderResponseDto(); //display to postman- get
         orderResponseDto.setOrderId(order.getOrderId());
         orderResponseDto.setFabric(order.getFabric());
         orderResponseDto.setStage(order.getStage());

@@ -13,9 +13,14 @@ public class TailorRepository implements PanacheRepository<Tailor> {
     @Inject
     EntityManager entityManager;
 
+//    @Transactional
+//    public void updateTailor(Tailor tailor){
+//        entityManager.merge(tailor);
+//    }
+
     @Transactional
-    public void updateTailor(Tailor tailor){
-        entityManager.merge(tailor);
+    public Tailor updateTailor(Tailor tailor){
+       return entityManager.merge(tailor);
     }
 
     @Transactional
