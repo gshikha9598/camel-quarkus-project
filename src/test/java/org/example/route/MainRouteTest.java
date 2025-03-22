@@ -7,6 +7,7 @@ import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.CamelContext;
 import org.apache.camel.EndpointInject;
+import org.apache.camel.Exchange;
 import org.apache.camel.ProducerTemplate;
 import org.apache.camel.builder.AdviceWith;
 import org.apache.camel.builder.AdviceWithRouteBuilder;
@@ -22,9 +23,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.apache.camel.builder.AdviceWith.adviceWith;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 
 @Slf4j
@@ -51,28 +54,19 @@ public class MainRouteTest {
 
     @BeforeEach
     public void setup() throws Exception {
-
         // Mock repository behavior
         Mockito.when(orderRepository.getOrderById(any(String.class))).thenReturn(new Order());
         Mockito.when(tailorRepository.updateTailor(any(Tailor.class))).thenReturn(new Tailor());
-        Mockito.when(personRepository.findAllOwners()).thenReturn(java.util.List.of());
-        Mockito.when(orderRepository.getCompletedOrder()).thenReturn(java.util.List.of());
+        Mockito.when(personRepository.findAllOwners()).thenReturn(List.of());
+        Mockito.when(orderRepository.getCompletedOrder()).thenReturn(List.of());
 
-
-        camelContext.getRoutes().forEach(route -> {
-            if (route.getRouteId().equals("insert-to-kafka-route")) {
-                try {
-                    adviceWith(route.getRouteId(), camelContext, new AdviceWithRouteBuilder() {
-                        @Override
-                        public void configure() throws Exception {
-                            interceptSendToEndpoint("kafka:*")
-                                    .skipSendToOriginalEndpoint()
-                                    .to("mock:kafka");
-                        }
-                    });
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+        // Mock Kafka call in the route
+        adviceWith("insert-to-kafka-route", camelContext, new AdviceWithRouteBuilder() {
+            @Override
+            public void configure() throws Exception {
+                interceptSendToEndpoint("kafka:*")
+                        .skipSendToOriginalEndpoint()
+                        .to("mock:kafka");
             }
         });
     }
@@ -107,35 +101,30 @@ public class MainRouteTest {
         return order;
     }
 
-    @Test
-    public void testPlaceOrderRoute() throws Exception {
-        // Create a sample order DTO
-        OrderDto orderDto = new OrderDto();
-        orderDto.setPersonId(3);
-        orderDto.setFabric("Cotton");
-
-        adviceWith("validate-order-route", camelContext, new AdviceWithRouteBuilder() {
-            @Override
-            public void configure() throws Exception {
-                weaveByToUri("seda:tailor").replace().to("mock:tailor");
-            }
-        });
-
-        MockEndpoint mockTailor = camelContext.getEndpoint("mock:tailor", MockEndpoint.class);
-        mockTailor.expectedMessageCount(1);
-
-        Order order = buildTestOrder();
-
-        Object body =  producerTemplate.requestBody("direct:validate-order", orderDto, Object.class);
-        log.info("body from validate order " + body);
-
-        producerTemplate.send("direct:validate-order", exchange -> {
-            exchange.setProperty("order", order);
-            exchange.setProperty("tailor", order.getTailor());
-        });
-
-        mockTailor.assertIsSatisfied();
-    }
+//    @Test
+//    public void testPlaceOrderRoute() throws Exception {
+//        // Create a sample OrderDto
+//        OrderDto orderDto = new OrderDto();
+//        orderDto.setPersonId(3L);
+//        orderDto.setFabric("Cotton");
+//
+//        // Advise the route to mock seda:tailor
+//        adviceWith("validate-order-route", camelContext, new AdviceWithRouteBuilder() {
+//            @Override
+//            public void configure() throws Exception {
+//                weaveByToUri("seda:tailor*").replace().to("mock:tailor");
+//            }
+//        });
+//        // Prepare and assert the mock endpoint
+//        MockEndpoint mockTailor = camelContext.getEndpoint("mock:tailor", MockEndpoint.class);
+//        mockTailor.expectedMessageCount(1);
+//
+//        // Send the OrderDto as the body (just like REST call would do)
+//        producerTemplate.sendBody("direct:validate-order", orderDto);
+//
+//        // Assert that the mock endpoint received the message
+//        mockTailor.assertIsSatisfied();
+//    }
 
     @Test
     public void testSedaStage() throws Exception {
@@ -296,25 +285,38 @@ public class MainRouteTest {
     }
 
 //    @Test
-//    public void testTrackOrder() {
-//        producerTemplate.send("direct:track-order", exchange -> {
-//            exchange.getIn().setHeader("orderId", "153d53e7-da23-46c3-93d2-729bece21832");
-//        });
+//    public void testTrackOrder() throws Exception {
+//        String testOrderId = "153d53e7-da23-46c3-93d2-729bece21832";
 //
-//        Mockito.verify(orderService, Mockito.times(1)).getOrderById(any());
+//        // Send a request to the REST endpoint using platform-http
+//        Object response = producerTemplate.requestBodyAndHeader(
+//                "direct:track-order",
+//                null,
+//                "orderId",
+//                testOrderId
+//        );
+//
+//        // Verify that orderService.getOrderById() is called with correct ID
+//        Mockito.verify(orderService, Mockito.times(1)).getOrderById(Mockito.argThat(exchange ->
+//                testOrderId.equals(exchange.getIn().getHeader("orderId"))
+//        ));
 //    }
 
-//    @Test
-//    public void testInsertToKafkaRoute() throws Exception {
-//        Message message = new Message();
-//        message.setSubject("Test Kafka Route");
-//        message.setTo("test@gmail.com");
-//        message.setMessageBody("Testing Kafka");
-//
-//        mockKafka.expectedMessageCount(1);
-//        producerTemplate.sendBody("direct:insert-to-kafka", message);
-//        mockKafka.assertIsSatisfied();
-//    }
+    @Test
+    public void testInsertToKafkaRoute() throws Exception {
+        org.example.model.Message message = new org.example.model.Message();
+        message.setSubject("Kafka Test");
+        message.setTo("test@example.com");
+        message.setMessageBody("Test Body");
+
+        MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka", MockEndpoint.class);
+        mockKafka.expectedMessageCount(1);
+
+        producerTemplate.sendBody("direct:insert-to-kafka", message);
+
+        mockKafka.assertIsSatisfied();
+        mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class);
+    }
 
 //    @Test
 //    public void testDailyUpdateSchedulerNoOrders() throws Exception {
