@@ -1,18 +1,14 @@
 package org.example.route;
 
 import io.quarkus.test.InjectMock;
-import io.quarkus.test.Mock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.camel.CamelContext;
-import org.apache.camel.EndpointInject;
-import org.apache.camel.Exchange;
-import org.apache.camel.ProducerTemplate;
-import org.apache.camel.builder.AdviceWith;
+import org.apache.camel.*;
 import org.apache.camel.builder.AdviceWithRouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.example.dto.OrderDto;
+import org.example.dto.OrderResponseDto;
 import org.example.model.*;
 import org.example.repository.OrderRepository;
 import org.example.repository.PersonRepository;
@@ -20,15 +16,14 @@ import org.example.repository.TailorRepository;
 import org.example.service.OrderService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-
 import static org.apache.camel.builder.AdviceWith.adviceWith;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
 
 @Slf4j
 @QuarkusTest
@@ -52,13 +47,14 @@ public class MainRouteTest {
     @InjectMock
     PersonRepository personRepository;
 
+    @Inject
+    MainRoute mainRoute;
+
     @BeforeEach
     public void setup() throws Exception {
         // Mock repository behavior
-        Mockito.when(orderRepository.getOrderById(any(String.class))).thenReturn(new Order());
-        Mockito.when(tailorRepository.updateTailor(any(Tailor.class))).thenReturn(new Tailor());
-        Mockito.when(personRepository.findAllOwners()).thenReturn(List.of());
-        Mockito.when(orderRepository.getCompletedOrder()).thenReturn(List.of());
+        when(orderRepository.getOrderById(any(String.class))).thenReturn(new Order());
+        when(tailorRepository.updateTailor(any(Tailor.class))).thenReturn(new Tailor());
 
         // Mock Kafka call in the route
         adviceWith("insert-to-kafka-route", camelContext, new AdviceWithRouteBuilder() {
@@ -77,6 +73,7 @@ public class MainRouteTest {
         order.setFabric("Cotton");
         order.setStage("NEW");
         order.setStageInTime(LocalDateTime.now());
+
         Person person = new Person();
         person.setEmail("gshikha290789@gmail.com");
         order.setUser(person);
@@ -101,30 +98,64 @@ public class MainRouteTest {
         return order;
     }
 
-//    @Test
-//    public void testPlaceOrderRoute() throws Exception {
-//        // Create a sample OrderDto
-//        OrderDto orderDto = new OrderDto();
-//        orderDto.setPersonId(3L);
-//        orderDto.setFabric("Cotton");
-//
-//        // Advise the route to mock seda:tailor
-//        adviceWith("validate-order-route", camelContext, new AdviceWithRouteBuilder() {
-//            @Override
-//            public void configure() throws Exception {
-//                weaveByToUri("seda:tailor*").replace().to("mock:tailor");
-//            }
-//        });
-//        // Prepare and assert the mock endpoint
-//        MockEndpoint mockTailor = camelContext.getEndpoint("mock:tailor", MockEndpoint.class);
-//        mockTailor.expectedMessageCount(1);
-//
-//        // Send the OrderDto as the body (just like REST call would do)
-//        producerTemplate.sendBody("direct:validate-order", orderDto);
-//
-//        // Assert that the mock endpoint received the message
-//        mockTailor.assertIsSatisfied();
-//    }
+    @Test
+    void testValidateOrderRoute() throws Exception {
+
+        adviceWith("validate-order-route", camelContext, new AdviceWithRouteBuilder() {
+            @Override
+            public void configure() throws Exception {
+                weaveByToUri("seda:tailor*").replace().to("mock:tailor");
+            }
+        });
+
+        doAnswer(invocation->{
+            Exchange ex=invocation.getArgument(0);
+
+            Tailor tailor=new Tailor();
+            tailor.setTailorId(1);
+            tailor.setTailorName("Test Tailor");
+
+            Order o1=new Order();
+
+            o1.setOrderId(UUID.randomUUID().toString());
+            o1.setFabric("Cotton");
+            o1.setStage("PLACED");
+            o1.setStageInTime(LocalDateTime.now());
+            o1.setTailor(tailor);
+
+            ex.setProperty("tailor",tailor);
+            ex.setProperty("order",o1);
+
+            return ex;
+
+        }).when(orderService).validateOrder(any(Exchange.class));
+
+        OrderDto orderDto=new OrderDto();
+
+        orderDto.setFabric("Cotton");
+        orderDto.setPersonId(1L);
+
+        producerTemplate.send("direct:validate-order",ex->ex.getIn().setBody(orderDto));
+
+        MockEndpoint mockTailor = camelContext.getEndpoint("mock:tailor", MockEndpoint.class);
+
+        mockTailor.expectedMessageCount(1);
+
+        mockTailor.assertIsSatisfied();
+
+        Exchange receivedExchange = mockTailor.getExchanges().get(0);
+
+        Tailor receivedTailor = receivedExchange.getProperty("tailor", Tailor.class);
+        Order receivedOrder = receivedExchange.getProperty("order", Order.class);
+
+        assertNotNull(receivedTailor, "Tailor property should not be null");
+        assertNotNull(receivedOrder, "Order property should not be null");
+
+        assertEquals(1, receivedTailor.getTailorId());
+        assertEquals("Test Tailor", receivedTailor.getTailorName());
+        assertEquals("Cotton", receivedOrder.getFabric());
+        assertEquals("PLACED", receivedOrder.getStage());
+    }
 
     @Test
     public void testSedaStage() throws Exception {
@@ -284,58 +315,180 @@ public class MainRouteTest {
         mockKafka.assertIsSatisfied();
     }
 
-//    @Test
-//    public void testTrackOrder() throws Exception {
-//        String testOrderId = "153d53e7-da23-46c3-93d2-729bece21832";
-//
-//        // Send a request to the REST endpoint using platform-http
-//        Object response = producerTemplate.requestBodyAndHeader(
-//                "direct:track-order",
-//                null,
-//                "orderId",
-//                testOrderId
-//        );
-//
-//        // Verify that orderService.getOrderById() is called with correct ID
-//        Mockito.verify(orderService, Mockito.times(1)).getOrderById(Mockito.argThat(exchange ->
-//                testOrderId.equals(exchange.getIn().getHeader("orderId"))
-//        ));
-//    }
+    @Test
+    void testTrackOrderRoute() throws Exception {
 
+        String orderId = UUID.randomUUID().toString();
+
+        doAnswer(invocation->{
+            Exchange ex=invocation.getArgument(0);
+
+            OrderResponseDto dto=new OrderResponseDto();
+
+            dto.setOrderId(orderId);
+            dto.setFabric("Test Fabric");
+            dto.setStage("Test Stage");
+
+            ex.getIn().setBody(dto);
+
+            return ex;
+        }).when(orderService).getOrderById(any(Exchange.class));
+
+        OrderResponseDto result=producerTemplate.requestBody("direct:track-order", null, OrderResponseDto.class);
+
+        assertNotNull(result);
+
+        assertEquals(orderId, result.getOrderId());
+        assertEquals("Test Fabric", result.getFabric());
+        assertEquals("Test Stage", result.getStage());
+    }
+
+    //testing for inserting message to kafka
     @Test
     public void testInsertToKafkaRoute() throws Exception {
         org.example.model.Message message = new org.example.model.Message();
         message.setSubject("Kafka Test");
-        message.setTo("test@example.com");
+        message.setTo("test@gmail.com");
         message.setMessageBody("Test Body");
 
-        MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka", MockEndpoint.class);
+        adviceWith("insert-to-kafka-route", camelContext, new AdviceWithRouteBuilder() {
+            @Override
+            public void configure() throws Exception {
+                weaveByToUri("kafka:mail-topic*").replace().to("mock:kafka-test");
+            }
+        });
+
+        String jsonString=producerTemplate.requestBody("direct:insert-to-kafka", message,String.class);
+
+        assertNotNull(jsonString);
+
+        assertEquals("{\"subject\":\"Kafka Test\",\"messageBody\":\"Test Body\",\"to\":\"test@gmail.com\"}",jsonString);
+    }
+
+    //testing for consuming message from kafka
+    @Test
+    public void testConsumeFromKafkaRoute() throws Exception {
+
+        adviceWith("consume-from-kafka-route", camelContext, new AdviceWithRouteBuilder() {
+            @Override
+            public void configure() throws Exception {
+                replaceFromWith("direct:consume-from-kafka-test");
+                weaveByToUri("direct:send-mail").replace().to("mock:mail-test");
+            }
+        });
+
+        String jsonString="{\"subject\":\"Kafka Test\",\"messageBody\":\"Test Body\",\"to\":\"test@gmail.com\"}";
+
+        producerTemplate.sendBody("direct:consume-from-kafka-test", jsonString);
+
+        MockEndpoint mockMail = camelContext.getEndpoint("mock:mail-test", MockEndpoint.class);
+        mockMail.expectedMessageCount(1);
+
+        mockMail.assertIsSatisfied();
+
+        Exchange ex=mockMail.getExchanges().get(0);
+
+        assertEquals("Kafka Test",ex.getProperty("subject",String.class));
+        assertEquals("Test Body",ex.getIn().getBody(String.class));
+        assertEquals("test@gmail.com",ex.getProperty("to",String.class));
+    }
+
+    @Test
+    public void testDailyUpdateCompletedOrder() throws Exception {
+
+        adviceWith("daily-update-scheduler-route",camelContext, new AdviceWithRouteBuilder() {
+            @Override
+            public void configure() throws Exception {
+                replaceFromWith("direct:daily-update-test");
+
+                weaveByToUri("direct:insert-to-kafka").replace().to("mock:kafka-daily-update-test");
+            }
+        });
+
+        Person owner=new Person();
+        owner.setUserId(1);
+        owner.setFirstName("Owner");
+        owner.setEmail("owner@gmail.com");
+
+        Tailor tailor=new Tailor();
+        tailor.setTailorId(1);
+        tailor.setTailorName("Test Tailor");
+
+        Order o1=new Order();
+        o1.setOrderId(UUID.randomUUID().toString());
+        o1.setFabric("Cotton");
+        o1.setStage("DISPATCHED");
+        o1.setStageInTime(LocalDateTime.now().minusDays(1));
+        o1.setTailor(tailor);
+
+        Order o2=new Order();
+        o2.setOrderId(UUID.randomUUID().toString());
+        o2.setFabric("Silk");
+        o2.setStage("DISPATCHED");
+        o2.setStageInTime(LocalDateTime.now().minusDays(1));
+        o2.setTailor(tailor);
+
+        when(orderRepository.getCompletedOrder()).thenReturn(List.of(o1,o2));
+        when(personRepository.findAllOwners()).thenReturn(List.of(owner));
+
+        camelContext.start();
+
+        MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka-daily-update-test", MockEndpoint.class);
         mockKafka.expectedMessageCount(1);
 
-        producerTemplate.sendBody("direct:insert-to-kafka", message);
+        producerTemplate.send("direct:daily-update-test",ex->{});
 
         mockKafka.assertIsSatisfied();
+
         mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class);
     }
 
-//    @Test
-//    public void testDailyUpdateSchedulerNoOrders() throws Exception {
-//        MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka", MockEndpoint.class);
-//        mockKafka.expectedMessageCount(0);
-//
-//        producerTemplate.send("cron://daily-update?schedule=0/1 * * * * ?", exchange -> {});
-//        mockKafka.assertIsSatisfied();
-//    }
+    @Test
+    public void testUpdateToManagerOrderStuck() throws Exception {
 
-//    @Test
-//    public void testNotifyManagerSchedulerNoDelayedOrders() throws Exception {
-//        Mockito.when(orderRepository.getAllDelayedOrder()).thenReturn(java.util.List.of());
-//
-//        MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka", MockEndpoint.class);
-//        mockKafka.expectedMessageCount(0);
-//
-//        producerTemplate.send("cron://daily-update?schedule=0/1 * * * * ?", exchange -> {});
-//        mockKafka.assertIsSatisfied();
-//    }
+        adviceWith("notify-manager-route",camelContext, new AdviceWithRouteBuilder() {
+            @Override
+            public void configure() throws Exception {
+                replaceFromWith("direct:notify-manager-test");
+                weaveByToUri("direct:insert-to-kafka").replace().to("mock:kafka-update-manager-test");
+            }
+
+        });
+
+        Person manager=new Person();
+        manager.setUserId(1);
+        manager.setFirstName("Manager");
+        manager.setEmail("manager@gmail.com");
+
+        Tailor tailor=new Tailor();
+        tailor.setTailorId(1);
+        tailor.setTailorName("Test Tailor");
+        tailor.setManager(manager);
+
+        Order o1=new Order();
+        o1.setOrderId(UUID.randomUUID().toString());
+        o1.setFabric("Cotton");
+        o1.setStage("STITCHING");
+        o1.setStageInTime(LocalDateTime.now().minusDays(1));
+        o1.setTailor(tailor);
+
+        Order o2=new Order();
+        o2.setOrderId(UUID.randomUUID().toString());
+        o2.setFabric("Silk");
+        o2.setStage("STITCHING");
+        o2.setStageInTime(LocalDateTime.now().minusDays(1));
+        o2.setTailor(tailor);
+
+        when(orderRepository.getAllDelayedOrder()).thenReturn(List.of(o1,o2));
+
+        MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka-update-manager-test", MockEndpoint.class);
+        mockKafka.expectedMessageCount(2);
+
+        producerTemplate.send("direct:notify-manager-test",ex->{});
+
+        mockKafka.assertIsSatisfied();
+
+        mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class);
+    }
 
 }

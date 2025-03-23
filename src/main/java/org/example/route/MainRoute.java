@@ -16,6 +16,7 @@ import org.example.repository.OrderRepository;
 import org.example.repository.PersonRepository;
 import org.example.repository.TailorRepository;
 import org.example.service.OrderService;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,11 +40,20 @@ public class MainRoute extends RouteBuilder {
         rest("/api/v1")
                 .post("/placeorder") //request body of exchange
                 .type(OrderDto.class)   //type- map which pojo-json to java object
-                .to("direct:validate-order")
+                .to("direct:validate-order-tmp")
                 .get("/trackorder")
                 .param().type(RestParamType.query).name("orderId").dataType("string").endParam() //for queryParam-get()
-                .to("direct:track-order")
+                .to("direct:track-order-tmp")
         ;
+
+        from("direct:validate-order-tmp")
+                .routeId("validate-order-route-tmp")
+                .to("direct:validate-order");
+
+        from("direct:track-order-tmp")
+                .routeId("track-order-route-tmp")
+                .to("direct:track-order");
+
 
         from("direct:validate-order")
                 .routeId("validate-order-route")
@@ -53,7 +63,8 @@ public class MainRoute extends RouteBuilder {
 
         from("seda:tailor")
                 .routeId("tailor-route")
-                .choice().when(exchange -> exchange.getProperty("order", Order.class)!=null)
+                .log("tailor route invoked-------------------------------------------------->")
+                .choice().when(exchange -> exchange.getProperty("order", Order.class) != null)
                 .log("order received, order=${exchangeProperty.order}, tailor=${exchangeProperty.tailor}") //check log
                 .to("direct:confirm-stage") //Order Confirmed Message by seda
         ;
@@ -70,7 +81,7 @@ public class MainRoute extends RouteBuilder {
 
                     Message message = new Message();
                     message.setSubject("Order Confirmed");
-                    message.setMessageBody("Your order is confirmed. OrderId="+order.getOrderId());
+                    message.setMessageBody("Your order is confirmed. OrderId=" + order.getOrderId());
                     message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
@@ -92,7 +103,7 @@ public class MainRoute extends RouteBuilder {
 
                     Message message = new Message();
                     message.setSubject("Fabric Being Cut");
-                    message.setMessageBody("Your fabric is being cut. OrderId="+order.getOrderId());
+                    message.setMessageBody("Your fabric is being cut. OrderId=" + order.getOrderId());
                     message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
@@ -114,7 +125,7 @@ public class MainRoute extends RouteBuilder {
 
                     Message message = new Message();
                     message.setSubject("Stitching Started");
-                    message.setMessageBody("Stitching has started. OrderId="+order.getOrderId());
+                    message.setMessageBody("Stitching has started. OrderId=" + order.getOrderId());
                     message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
@@ -136,7 +147,7 @@ public class MainRoute extends RouteBuilder {
 
                     Message message = new Message();
                     message.setSubject("Quality Check");
-                    message.setMessageBody("Quality check is done. OrderId="+order.getOrderId());
+                    message.setMessageBody("Quality check is done. OrderId=" + order.getOrderId());
                     message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message);
@@ -164,7 +175,7 @@ public class MainRoute extends RouteBuilder {
 
                     Message message = new Message();
                     message.setSubject("Order Dispatched");
-                    message.setMessageBody("Your order is dispatched. OrderId="+order.getOrderId());
+                    message.setMessageBody("Your order is dispatched. OrderId=" + order.getOrderId());
                     message.setTo(order.getUser().getEmail()); //email-person
 
                     exchange.getIn().setBody(message); //message go to kafka
@@ -189,10 +200,10 @@ public class MainRoute extends RouteBuilder {
                 .process(exchange -> {
                     String message = exchange.getIn().getBody(String.class); //jsonString
                     ObjectMapper objectMapper = new ObjectMapper();
-                   Message obj = objectMapper.readValue(message, Message.class); //convert jsonStrong to msg object
+                    Message obj = objectMapper.readValue(message, Message.class); //convert jsonStrong to msg object
                     //set message- to,subject,messageBody in exchange property
                     exchange.setProperty("to", obj.getTo());
-                   exchange.setProperty("subject", obj.getSubject());
+                    exchange.setProperty("subject", obj.getSubject());
 
                     exchange.getIn().setBody(obj.getMessageBody());
                 })
@@ -209,15 +220,18 @@ public class MainRoute extends RouteBuilder {
                     List<Person> personList = personRepository.findAllOwners(); //Owners
                     List<Message> msgList = new ArrayList<>();
 
+                    log.info("orderList------------->{}", orderList);
+                    log.info("personList------------->{}", personList);
+
                     String messageBody = "Hello Sir,\n\nHere is the Order Details that have been Completed Today...";
 
                     for (int i = 0; i < orderList.size(); i++) {
                         Order order = orderList.get(i);
-                        messageBody = messageBody + "\n\n"+(i+1)+". orderId = "+order.getOrderId()+"\n  tailorName= "+order.getTailor().getTailorName()+"\n  fabric = "+order.getFabric();
+                        messageBody = messageBody + "\n\n" + (i + 1) + ". orderId = " + order.getOrderId() + "\n  tailorName= " + order.getTailor().getTailorName() + "\n  fabric = " + order.getFabric();
                     }
 
-                    if(!orderList.isEmpty()){
-                        for(Person person: personList){ //Owner
+                    if (!orderList.isEmpty()) {
+                        for (Person person : personList) { //Owner
                             Message message = new Message();
                             message.setTo(person.getEmail()); //whom to send
                             message.setMessageBody(messageBody);
@@ -228,12 +242,13 @@ public class MainRoute extends RouteBuilder {
                         exchange.getIn().setBody(msgList); //List of msg
                     }
                 })
-                .choice().when(exchange -> exchange.getIn().getBody()!=null) //if-condtion
+                .choice().when(exchange -> exchange.getIn().getBody() != null) //if-condtion
                 .split().body() //Splits a list(msg) into multiple individual messages, processing them synchronously by default.
                 .to("direct:insert-to-kafka")
                 .endChoice()
                 .otherwise() //else-condtion
                 .log("No order completed today")
+                .setBody().constant("No order completed today")
                 .end()
         ;
 
@@ -242,29 +257,30 @@ public class MainRoute extends RouteBuilder {
                 .routeId("notify-manager-route")
                 .log("route for update to manager trigger")
                 .process(exchange -> {
-                  List<Order> orderList = orderRepository.getAllDelayedOrder(); //delay Orders list
-                  List<Message> msgList = new ArrayList<>();
+                    List<Order> orderList = orderRepository.getAllDelayedOrder(); //delay Orders list
+                    List<Message> msgList = new ArrayList<>();
 
-                  if(!orderList.isEmpty()){
-                      for(Order order: orderList){
-                          Message message = new Message();
-                          message.setTo(order.getTailor().getManager().getEmail());
-                          message.setSubject("Order is Stuck more than 1 day");
+                    if (!orderList.isEmpty()) {
+                        for (Order order : orderList) {
+                            Message message = new Message();
+                            message.setTo(order.getTailor().getManager().getEmail());
+                            message.setSubject("Order is Stuck more than 1 day");
 
-                          String messageBody = "Hello Sir,\n\nThis order have been stuck for more than 1 day. Here is the order details:\n\norderId="+order.getOrderId()+"\ntailorName="+order.getTailor().getTailorName()+"\nfabricName="+order.getFabric()+"\nstageName="+order.getStage()+"\nstageInTime="+order.getStageInTime();
+                            String messageBody = "Hello Sir,\n\nThis order have been stuck for more than 1 day. Here is the order details:\n\norderId=" + order.getOrderId() + "\ntailorName=" + order.getTailor().getTailorName() + "\nfabricName=" + order.getFabric() + "\nstageName=" + order.getStage() + "\nstageInTime=" + order.getStageInTime();
 
-                          message.setMessageBody(messageBody);
-                          msgList.add(message);
-                      }
-                      exchange.getIn().setBody(msgList); //List of msg
-                  }
+                            message.setMessageBody(messageBody);
+                            msgList.add(message);
+                        }
+                        exchange.getIn().setBody(msgList); //List of msg
+                    }
                 })
-                .choice().when(exchange -> exchange.getIn().getBody()!=null)
+                .choice().when(exchange -> exchange.getIn().getBody() != null)
                 .split().body() //Splits a list(msg) into multiple individual messages, processing them synchronously by default.
                 .to("direct:insert-to-kafka")
                 .endChoice()
                 .otherwise()
                 .log("No order is stuck at any stage")
+                .setBody().constant("No order is stuck at any stage")
                 .end()
         ;
     }

@@ -21,9 +21,11 @@ class MailRouteTest {
     @Inject
     ProducerTemplate producerTemplate;
 
-    @BeforeEach
-    void setUp() throws Exception {
-        // Advice route to mock SMTP call
+
+
+    @Test
+    void testSendMailRoute() throws Exception {
+
         adviceWith("send-mail-route", camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
@@ -32,23 +34,18 @@ class MailRouteTest {
                         .to("mock:smtp");
             }
         });
-        camelContext.start();
-    }
-
-    @Test
-    void testSendMailRoute() throws Exception {
-        assertNotNull(camelContext);
 
         MockEndpoint mockSmtp = camelContext.getEndpoint("mock:smtp", MockEndpoint.class);
         mockSmtp.expectedMessageCount(1);
+
         mockSmtp.expectedHeaderReceived("subject", "Test Subject");
-        mockSmtp.expectedHeaderReceived("to", "test@example.com");
+        mockSmtp.expectedHeaderReceived("to", "test@gmail.com");
         mockSmtp.expectedHeaderReceived("Content-Type", "text/plain");
 
         producerTemplate.send("direct:send-mail", exchange -> {
             exchange.getIn().setBody("Test Body");
             exchange.setProperty("subject", "Test Subject");
-            exchange.setProperty("to", "test@example.com");
+            exchange.setProperty("to", "test@gmail.com");
         });
 
         mockSmtp.assertIsSatisfied();

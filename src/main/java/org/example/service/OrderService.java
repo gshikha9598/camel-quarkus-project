@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.camel.Exchange;
 import org.example.dto.OrderDto;
 import org.example.dto.OrderResponseDto;
@@ -19,6 +20,8 @@ import org.example.repository.TailorRepository;
 import java.time.LocalDateTime;
 import java.util.*;
 
+
+@Slf4j
 @ApplicationScoped
 public class OrderService {
 
@@ -42,13 +45,19 @@ public class OrderService {
         OrderDto orderDto = exchange.getIn().getBody(OrderDto.class); //exchange ke object se body get krna
         Person person = personRepository.getPersonById(orderDto.getPersonId()); //get customerId- 3
 
+        log.info("orderDto---->{}",orderDto);
+        log.info("person------>{}",person);
+
+
         if (person == null) {
             exchange.getIn().setBody("Person with this id does not exist");
+            exchange.getIn().setHeader(Exchange.HTTP_RESPONSE_CODE, 404);
             return;
         }
 
         if (fabricRepository.getFabricByName(orderDto.getFabric()) == 0) { //get Matched Fabric
             exchange.getIn().setBody("This fabric does not exist");
+            exchange.getIn().setHeader(Exchange.HTTP_RESPONSE_CODE, 404);
             return;
         }
 
@@ -56,6 +65,7 @@ public class OrderService {
 
         if(tailorList.isEmpty()){ //if all tailors are occupied- no tailor is empty/free
             exchange.getIn().setBody("No Tailor is Available Now");
+            exchange.getIn().setHeader(Exchange.HTTP_RESPONSE_CODE, 404);
             return;
         }
 
@@ -73,6 +83,7 @@ public class OrderService {
 
         if (tailor==null) {
             exchange.getIn().setBody("No tailor have this fabric");
+            exchange.getIn().setHeader(Exchange.HTTP_RESPONSE_CODE, 404);
             return;
         }
 
