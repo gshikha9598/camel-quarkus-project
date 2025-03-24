@@ -47,18 +47,22 @@ public class MainRoute extends RouteBuilder {
         ;
 
         from("direct:validate-order-tmp")
-                .routeId("validate-order-route-tmp")
-                .to("direct:validate-order");
-
-        from("direct:track-order-tmp")
-                .routeId("track-order-route-tmp")
-                .to("direct:track-order");
-
+                .to("direct:validate-order")
+        ;
 
         from("direct:validate-order")
                 .routeId("validate-order-route")
                 .bean(orderService, "validateOrder") //bean class and related method
                 .to("seda:tailor?WaitForTaskToComplete=Never") //seda- asynchronous call
+        ;
+
+        from("direct:track-order-tmp")
+                .to("direct:track-order")
+        ;
+
+        from("direct:track-order")
+                .routeId("track-order-route")
+                .bean(orderService, "getOrderById")
         ;
 
         from("seda:tailor")
@@ -181,11 +185,6 @@ public class MainRoute extends RouteBuilder {
                     exchange.getIn().setBody(message); //message go to kafka
                 })
                 .to("direct:insert-to-kafka")
-        ;
-
-        from("direct:track-order")
-                .routeId("track-order-route")
-                .bean(orderService, "getOrderById")
         ;
 
         from("direct:insert-to-kafka")

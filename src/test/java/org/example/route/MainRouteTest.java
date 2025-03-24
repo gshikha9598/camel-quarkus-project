@@ -52,24 +52,29 @@ public class MainRouteTest {
 
     @BeforeEach
     public void setup() throws Exception {
-        // Mock repository behavior
+
+        //When getOrderById() called on orderRepository with any String value
+        // then return a new Order object without actually calling the real database.
         when(orderRepository.getOrderById(any(String.class))).thenReturn(new Order());
+
+        //When updateTailor() is called on tailorRepository with any Tailor object,
+        //then return a new Tailor object without actually calling the real database.
         when(tailorRepository.updateTailor(any(Tailor.class))).thenReturn(new Tailor());
 
-        // Mock Kafka call in the route
+        //modify the route for testing.
         adviceWith("insert-to-kafka-route", camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
                 interceptSendToEndpoint("kafka:*")
-                        .skipSendToOriginalEndpoint()
+                        .skipSendToOriginalEndpoint() //don’t send message to real Kafka endpoint.
                         .to("mock:kafka");
             }
         });
     }
 
     private Order buildTestOrder() {
-        Order order = new Order();
-        order.setOrderId(UUID.randomUUID().toString());//new orderId
+        Order order = new Order(); //Get all Order Details
+        order.setOrderId(UUID.randomUUID().toString()); //new orderId
         order.setFabric("Cotton");
         order.setStage("NEW");
         order.setStageInTime(LocalDateTime.now());
@@ -90,33 +95,34 @@ public class MainRouteTest {
         tailor.setOrderId(order.getOrderId());
 
         Person manager = new Person();
-        manager.setEmail("manager@example.com");
+        manager.setEmail("manager@gmail.com");
 
         tailor.setManager(manager);
 
         order.setTailor(tailor);
+
         return order;
     }
 
     @Test
     void testValidateOrderRoute() throws Exception {
 
+        //modify the route for testing.
         adviceWith("validate-order-route", camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
-                weaveByToUri("seda:tailor*").replace().to("mock:tailor");
+                weaveByToUri("seda:tailor*").replace().to("mock:tailor"); //replace- to path
             }
         });
 
-        doAnswer(invocation->{
-            Exchange ex=invocation.getArgument(0);
+        doAnswer(invocation->{ //object representing a mocked method invocation,
+            Exchange ex=invocation.getArgument(0); //retrieves the argument passed at index 0
 
-            Tailor tailor=new Tailor();
+            Tailor tailor=new Tailor();  //get validateOrder details here- tailor and order
             tailor.setTailorId(1);
             tailor.setTailorName("Test Tailor");
 
             Order o1=new Order();
-
             o1.setOrderId(UUID.randomUUID().toString());
             o1.setFabric("Cotton");
             o1.setStage("PLACED");
@@ -128,30 +134,30 @@ public class MainRouteTest {
 
             return ex;
 
-        }).when(orderService).validateOrder(any(Exchange.class));
+        }).when(orderService).validateOrder(any(Exchange.class));// bean task, //call any exchange object in validateorder()
 
         OrderDto orderDto=new OrderDto();
-
         orderDto.setFabric("Cotton");
         orderDto.setPersonId(1L);
 
+        //Send the orderDto object to the direct:validate-order route and process it synchronously.
         producerTemplate.send("direct:validate-order",ex->ex.getIn().setBody(orderDto));
 
+        //retrieves a mock endpoint from the Camel context
         MockEndpoint mockTailor = camelContext.getEndpoint("mock:tailor", MockEndpoint.class);
+        mockTailor.expectedMessageCount(1); //expect 1 msg to arrive at seda during the test
 
-        mockTailor.expectedMessageCount(1);
+        mockTailor.assertIsSatisfied(); //condition satify
 
-        mockTailor.assertIsSatisfied();
+        Exchange receivedExchange = mockTailor.getExchanges().get(0); //exchange object 0 index
 
-        Exchange receivedExchange = mockTailor.getExchanges().get(0);
+        Tailor receivedTailor = receivedExchange.getProperty("tailor", Tailor.class); //exchange property tailor
+        Order receivedOrder = receivedExchange.getProperty("order", Order.class); //exchange property order
 
-        Tailor receivedTailor = receivedExchange.getProperty("tailor", Tailor.class);
-        Order receivedOrder = receivedExchange.getProperty("order", Order.class);
+        assertNotNull(receivedTailor, "Tailor property should not be null"); //not be null
+        assertNotNull(receivedOrder, "Order property should not be null"); //not be null
 
-        assertNotNull(receivedTailor, "Tailor property should not be null");
-        assertNotNull(receivedOrder, "Order property should not be null");
-
-        assertEquals(1, receivedTailor.getTailorId());
+        assertEquals(1, receivedTailor.getTailorId()); //verify expected result
         assertEquals("Test Tailor", receivedTailor.getTailorName());
         assertEquals("Cotton", receivedOrder.getFabric());
         assertEquals("PLACED", receivedOrder.getStage());
@@ -159,7 +165,7 @@ public class MainRouteTest {
 
     @Test
     public void testSedaStage() throws Exception {
-
+        //modify the route for testing.
         adviceWith("tailor-route", camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
@@ -167,11 +173,13 @@ public class MainRouteTest {
             }
         });
 
+        //retrieves a mock endpoint from the Camel context
         MockEndpoint mockConfirm = camelContext.getEndpoint("mock:confirm", MockEndpoint.class);
-        mockConfirm.expectedMessageCount(1);
+        mockConfirm.expectedMessageCount(1); //expected 1 msg
 
         Order order = buildTestOrder();
 
+        //Send a msg to the asynchronous route seda:tailor
         producerTemplate.send("seda:tailor", exchange -> {
             exchange.setProperty("order", order);
             exchange.setProperty("tailor", order.getTailor());
@@ -182,7 +190,7 @@ public class MainRouteTest {
 
     @Test
     public void testConfirmStage() throws Exception {
-
+        //modify the route for testing.
         adviceWith("confirm-stage-route", camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
@@ -191,14 +199,17 @@ public class MainRouteTest {
             }
         });
 
+        //retrieves a mock endpoint from the Camel context
         MockEndpoint mockKafka = camelContext.getEndpoint("mock:kafka-confirm-stage", MockEndpoint.class);
         mockKafka.expectedMessageCount(1);
 
+        //retrieves a mock endpoint from the Camel context
         MockEndpoint mockFabric = camelContext.getEndpoint("mock:fabric", MockEndpoint.class);
         mockFabric.expectedMessageCount(1);
 
-        Order order = buildTestOrder();
+        Order order = buildTestOrder(); //get order details
 
+        //Send a msg to the synchronous route direct:confirm-stage
         producerTemplate.send("direct:confirm-stage", exchange -> {
             exchange.setProperty("order", order);
             exchange.setProperty("tailor", order.getTailor());
@@ -312,7 +323,7 @@ public class MainRouteTest {
             exchange.setProperty("tailor", order.getTailor());
         });
 
-        mockKafka.assertIsSatisfied();
+        mockKafka.assertIsSatisfied();//verify expectedMessageCount(1)
     }
 
     @Test
@@ -321,10 +332,9 @@ public class MainRouteTest {
         String orderId = UUID.randomUUID().toString();
 
         doAnswer(invocation->{
-            Exchange ex=invocation.getArgument(0);
+            Exchange ex=invocation.getArgument(0); //get exchange object 0 index
 
             OrderResponseDto dto=new OrderResponseDto();
-
             dto.setOrderId(orderId);
             dto.setFabric("Test Fabric");
             dto.setStage("Test Stage");
@@ -338,7 +348,7 @@ public class MainRouteTest {
 
         assertNotNull(result);
 
-        assertEquals(orderId, result.getOrderId());
+        assertEquals(orderId, result.getOrderId()); //expect this data
         assertEquals("Test Fabric", result.getFabric());
         assertEquals("Test Stage", result.getStage());
     }
@@ -399,7 +409,7 @@ public class MainRouteTest {
         adviceWith("daily-update-scheduler-route",camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
-                replaceFromWith("direct:daily-update-test");
+                replaceFromWith("direct:daily-update-test"); //replace from path(cron to direct)
 
                 weaveByToUri("direct:insert-to-kafka").replace().to("mock:kafka-daily-update-test");
             }
@@ -418,14 +428,14 @@ public class MainRouteTest {
         o1.setOrderId(UUID.randomUUID().toString());
         o1.setFabric("Cotton");
         o1.setStage("DISPATCHED");
-        o1.setStageInTime(LocalDateTime.now().minusDays(1));
+        //o1.setStageInTime(LocalDateTime.now().minusDays(1));
         o1.setTailor(tailor);
 
         Order o2=new Order();
         o2.setOrderId(UUID.randomUUID().toString());
         o2.setFabric("Silk");
         o2.setStage("DISPATCHED");
-        o2.setStageInTime(LocalDateTime.now().minusDays(1));
+        //o2.setStageInTime(LocalDateTime.now().minusDays(1));
         o2.setTailor(tailor);
 
         when(orderRepository.getCompletedOrder()).thenReturn(List.of(o1,o2));
@@ -440,7 +450,7 @@ public class MainRouteTest {
 
         mockKafka.assertIsSatisfied();
 
-        mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class);
+        mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class); //in kafka exchange body- message object
     }
 
     @Test
@@ -449,7 +459,7 @@ public class MainRouteTest {
         adviceWith("notify-manager-route",camelContext, new AdviceWithRouteBuilder() {
             @Override
             public void configure() throws Exception {
-                replaceFromWith("direct:notify-manager-test");
+                replaceFromWith("direct:notify-manager-test"); //replace from path(cron to direct)
                 weaveByToUri("direct:insert-to-kafka").replace().to("mock:kafka-update-manager-test");
             }
 
@@ -469,14 +479,14 @@ public class MainRouteTest {
         o1.setOrderId(UUID.randomUUID().toString());
         o1.setFabric("Cotton");
         o1.setStage("STITCHING");
-        o1.setStageInTime(LocalDateTime.now().minusDays(1));
+        //o1.setStageInTime(LocalDateTime.now().minusDays(1));
         o1.setTailor(tailor);
 
         Order o2=new Order();
         o2.setOrderId(UUID.randomUUID().toString());
         o2.setFabric("Silk");
         o2.setStage("STITCHING");
-        o2.setStageInTime(LocalDateTime.now().minusDays(1));
+        //o2.setStageInTime(LocalDateTime.now().minusDays(1));
         o2.setTailor(tailor);
 
         when(orderRepository.getAllDelayedOrder()).thenReturn(List.of(o1,o2));
@@ -488,7 +498,7 @@ public class MainRouteTest {
 
         mockKafka.assertIsSatisfied();
 
-        mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class);
+        mockKafka.message(0).body().isInstanceOf(org.example.model.Message.class); //in kafka exchange body- message object
     }
 
 }

@@ -11,7 +11,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
 
 @QuarkusTest
-public class RestEndpointTest {
+public class RestEndpointTest { //verify behavior of REST endpoints
 
     @Inject
     CamelContext camelContext;
@@ -23,13 +23,15 @@ public class RestEndpointTest {
         orderDto.setPersonId(1L);
         orderDto.setFabric("Cotton");
 
+        //sends a POST request to /api/v1/placeorder with JSON data and checks if response has 200 status code,
+        // and verifies that it contains a success message and a valid orderId.
+
         given()
                 .contentType(ContentType.JSON)
                 .body(orderDto)
                 .when()
                 .post("/api/v1/placeorder")
                 .then()
-                .log().all()  // <-- logs the response details
                 .statusCode(HttpStatus.SC_OK)  // Ensure 200 response
                 .body("status", equalTo("order placed successfully"))
                 .body("orderId", notNullValue());
@@ -38,17 +40,17 @@ public class RestEndpointTest {
     @Test
     void testTrackOrder() {
 
-        String validOrderId = "638eec94-764e-43f1-b9eb-38ed2b868bce";//any valid order id
+        String validOrderId = "0317dcd2-3699-4501-9868-dcc0f22d04f6";//any valid order id
 
         given()
                 .queryParam("orderId", validOrderId)
                 .when()
                 .get("/api/v1/trackorder")
                 .then()
-                .statusCode(HttpStatus.SC_OK)
-                .body("orderId", equalTo(validOrderId))
-                .body("fabric", notNullValue())
-                .body("stage", notNullValue());
+                .statusCode(HttpStatus.SC_OK) // Ensure 200 response
+                .body("orderId", equalTo(validOrderId)) //test body
+                .body("fabric", notNullValue()) //test body
+                .body("stage", notNullValue()); //test body
     }
 
 }
